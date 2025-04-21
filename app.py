@@ -1,38 +1,112 @@
 import streamlit as st
+import requests
+from geopy.geocoders import Nominatim
+from geopy.distance import geodesic
 import folium
 from streamlit_folium import st_folium
-from geo_utils import get_coordinates, fetch_health_facilities
+
+# ----------------------------
+# Utility Functions
+# ----------------------------
+
+@st.cache_data
+def get_coordinates(place):
+    """Get latitude and longitude from location string using Nominatim."""
+    geolocator = Nominatim(user_agent="health-mapper")
+    location = geolocator.geocode(place)
+    if location:
+        return location.latitude, location.longitude
+    return None, None
+
+@st.cache_data
+def fetch_health_facilities(lat, lon, radius=3000):
+    """Fetch health facilities near given coordinates using Overpass API."""
+    query = f"""
+    [out:json][timeout:25];
+    (
+      node["amenity"="hospital"](around:{radius},{lat},{lon});
+      node["amenity"="clinic"](around:{radius},{lat},{lon});
+      node["amenity"="pharmacy"](around:{radius},{lat},{lon});
+    );
+    out body;
+    """
+    url = "https://overpass-api.de/api/interpreter"
+    response = requests.post(url, data={"data": query})
+    facilities = []
+    if response.status_code == 200:
+        data = response.json()
+        for element in data["elements"]:
+            facility_type = element["tags"].get("amenity")
+            name = element["tags"].get("name", "Unnamed")
+            facilities.append({
+                "name": name,
+                "type": facility_type,
+                "lat": element["lat"],
+                "lon": element["lon"]
+            })
+    return facilities
+
+# ----------------------------
+# Streamlit App
+# ----------------------------
 
 st.set_page_config(page_title="HealthMapper", layout="wide")
+st.title("🩺 HealthMapper – Nearest Emergency & Health Facilities Finder")
 
-st.title("🏥 HealthMapper")
-st.write("Find nearby hospitals, clinics, and pharmacies using OpenStreetMap.")
+st.markdown("""
+Find nearby hospitals, clinics, and pharmacies using **OpenStreetMap** data.  
+Simply enter your location and we’ll show you the closest options on a map.
+""")
 
-# Input: Location
-place = st.text_input("Enter your location:", "Marina Bay, Singapore")
+place = st.text_input("Enter a location (e.g. 'Marina Bay, Singapore')")
 
-if place:
+facility_options = ["hospital", "clinic", "pharmacy"]
+selected_types = st.multiselect("Select facility types to show:", facility_options, default=facility_options)
+
+if place and selected_types:
     lat, lon = get_coordinates(place)
     if lat is None:
         st.error("Could not find the location. Please try again.")
     else:
-        st.success(f"Found location: {lat}, {lon}")
+        st.success(f"Found location: {lat:.4f}, {lon:.4f}")
         facilities = fetch_health_facilities(lat, lon)
 
-        # Map
-        m = folium.Map(location=[lat, lon], zoom_start=14)
-        folium.Marker([lat, lon], tooltip="You are here", icon=folium.Icon(color="blue")).add_to(m)
+        # Filter selected types
+        filtered = [f for f in facilities if f["type"] in selected_types]
 
-        for f in facilities:
-            icon_color = {"hospital": "red", "clinic": "green", "pharmacy": "purple"}.get(f["type"], "gray")
+        # Add distance and sort
+        for f in filtered:
+            f["distance_km"] = round(geodesic((lat, lon), (f["lat"], f["lon"])).km, 2)
+        filtered.sort(key=lambda x: x["distance_km"])
+
+        # Map setup
+        m = folium.Map(location=[lat, lon], zoom_start=14)
+        folium.Marker([lat, lon], tooltip="📍 You are here", icon=folium.Icon(color="blue")).add_to(m)
+
+        for f in filtered:
+            icon_color = {
+                "hospital": "red",
+                "clinic": "green",
+                "pharmacy": "purple"
+            }.get(f["type"], "gray")
+            popup_html = f"""
+            <b>{f['name']}</b><br>
+            Type: {f['type']}<br>
+            Distance: {f['distance_km']} km<br>
+            <a href="https://www.google.com/maps/dir/?api=1&destination={f['lat']},{f['lon']}" target="_blank">📍 Get Directions</a>
+            """
             folium.Marker(
                 location=[f["lat"], f["lon"]],
                 tooltip=f"{f['name']} ({f['type']})",
-                icon=folium.Icon(color=icon_color)
+                icon=folium.Icon(color=icon_color),
+                popup=popup_html
             ).add_to(m)
 
         st_folium(m, width=900, height=600)
 
-        st.subheader("📋 Nearby Facilities")
-        for f in facilities:
-            st.markdown(f"**{f['name']}** - `{f['type'].capitalize()}`")
+        # List view
+        st.subheader("📋 Facility List (sorted by distance)")
+        for f in filtered:
+            st.markdown(f"**{f['name']}** - `{f['type'].capitalize()}` — {f['distance_km']} km away")
+elif place and not selected_types:
+    st.warning("Please select at least one facility type to proceed.")
