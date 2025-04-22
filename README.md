@@ -31,7 +31,12 @@ cd HealthMapper
 
 2. Create Virutal Environment:
 ```bash
+# For Windows
 python -m venv venv
+venv\Scripts\activate
+
+# For macOS/Linux
+python3 -m venv venv
 source venv/bin/activate
 ```
 
@@ -50,8 +55,17 @@ streamlit run app.py
 
 ## 🎥 Demo Video
 
-> Link to Demo Video here
+> Watch the demo: [HealthMapper Demo](https://www.loom.com/share/4441a7fa122a468ba133574af4c33f61?sid=698160a7-4e04-4c44-ae13-7875e669fc80)
 
+
+---
+
+## 📘 Code Walkthrough
+
+For a deeper dive into how the code works, check out the [CODE_WALKTHROUGH.md](CODE_WALKTHROUGH.md) file.
+
+
+---
 
 ## 📦 Folder Structure
 
@@ -61,6 +75,7 @@ healthmapper/
 ├── geo_utils.py         # Location and Overpass API utilities
 ├── requirements.txt     # Python dependencies
 ├── README.md            # Project overview and documentation
+├── CODE_WALKTHROUGH.md  # Code explaination in simple points
 └── ...
 ```
 
